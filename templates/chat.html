@@ -1,32 +1,50 @@
 {% extends "base.html" %}
+{% block title %}{{ chat_room.name }} — Mirik{% endblock %}
 
 {% block content %}
-<div class="chat-container">
+<main class="chat-container">
     <header class="chat-header">
-        <h1>{{ chat_room.name }}</h1>
-        <a href="{{ url_for('dashboard') }}" class="btn-back">Назад</a>
+        <div>
+            <a href="{{ url_for('dashboard') }}" class="btn-back">← Назад</a>
+            <h1>{{ chat_room.name }}</h1>
+            <span class="chat-status">{% if chat_room.is_private %}🔒 Приватный чат{% else %}🌐 Открытый чат{% endif %}</span>
+        </div>
+        {% if chat_room.is_private %}<code class="header-code">{{ chat_room.code }}</code>{% endif %}
     </header>
-    
-    <div class="chat-messages">
-        {% for message in messages %}
-            <div class="message">
-                <img src="{{ url_for('static', filename='avatars/' + message.author.avatar) }}" 
-                     alt="Аватар" class="avatar-small">
-                <div class="message-content">
-                    <span class="message-author">{{ message.author.email }}</span>
-                    <span class="message-text">{{ message.content }}</span>
-                    <span class="message-time">{{ message.timestamp.strftime('%H:%M') }}</span>
-                </div>
+
+    <section class="chat-messages" id="messages" aria-live="polite">
+        {% if messages %}
+            {% for message in messages %}
+                <article class="message {% if message.user_id == current_user.id %}message-own{% endif %}">
+                    <div class="message-avatar">{{ message.author.email[:1]|upper }}</div>
+                    <div class="message-content">
+                        <div class="message-meta">
+                            <strong>{{ message.author.email }}</strong>
+                            <time datetime="{{ message.timestamp.isoformat() }}">{{ message.timestamp.strftime('%H:%M') }}</time>
+                        </div>
+                        <p class="message-text">{{ message.content }}</p>
+                    </div>
+                </article>
+            {% endfor %}
+        {% else %}
+            <div class="empty-state">
+                <div class="empty-icon">💬</div>
+                <h3>Здесь пока тихо</h3>
+                <p class="muted">Напиши первое сообщение.</p>
             </div>
-        {% endfor %}
-    </div>
-    
-    <div class="chat-input">
-        <form method="POST" action="{{ url_for('send_message') }}">
-            <input type="hidden" name="chat_id" value="{{ chat_room.id }}">
-            <input type="text" name="content" placeholder="Введите сообщение..." required>
-            <button type="submit" class="btn-send">Отправить</button>
-        </form>
-    </div>
-</div>
+        {% endif %}
+    </section>
+
+    <form method="POST" action="{{ url_for('send_message') }}" class="chat-input">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="chat_id" value="{{ chat_room.id }}">
+        <label class="sr-only" for="content">Сообщение</label>
+        <input id="content" type="text" name="content" placeholder="Напишите сообщение..." maxlength="2000" autocomplete="off" required autofocus>
+        <button type="submit" class="btn-send" aria-label="Отправить сообщение">➤</button>
+    </form>
+</main>
+<script>
+    const messages = document.getElementById('messages');
+    if (messages) messages.scrollTop = messages.scrollHeight;
+</script>
 {% endblock %}

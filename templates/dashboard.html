@@ -1,51 +1,78 @@
 {% extends "base.html" %}
+{% block title %}Чаты — Mirik{% endblock %}
 
 {% block content %}
-<div class="dashboard-container">
+<main class="dashboard-container">
     <header class="dashboard-header">
-        <h1>Добро пожаловать в Chat, {{ current_user.email }}!</h1>
-        <a href="{{ url_for('logout') }}" class="btn-logout">Выйти</a>
+        <div>
+            <div class="brand brand-left">MIRIK</div>
+            <h1>Привет, {{ current_user.email }} 👋</h1>
+            <p class="muted">Создавай комнаты и общайся с друзьями.</p>
+        </div>
+        <form method="POST" action="{{ url_for('logout') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn-danger">Выйти</button>
+        </form>
     </header>
-    
-    <div class="dashboard-content">
-        <div class="chat-creation">
-            <h2>Создать новый чат</h2>
+
+    <section class="dashboard-grid">
+        <article class="card">
+            <div class="card-icon">＋</div>
+            <h2>Новый чат</h2>
+            <p class="muted">Создай комнату для своей компании.</p>
             <form method="POST" action="{{ url_for('create_chat') }}">
-                <input type="text" name="chat_name" placeholder="Название чата" required>
-                <label>
-                    <input type="checkbox" name="is_private"> Приватный чат (только по коду)
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <label class="sr-only" for="chat_name">Название чата</label>
+                <input type="text" id="chat_name" name="chat_name" placeholder="Название чата" maxlength="100" required>
+                <label class="check-row">
+                    <input type="checkbox" name="is_private">
+                    <span>Приватный чат по коду</span>
                 </label>
-                <button type="submit" class="btn-primary">Создать</button>
+                <button type="submit" class="btn-primary">Создать чат</button>
             </form>
-        </div>
-        
-        <div class="chat-join">
-            <h2>Присоединиться к чату по коду</h2>
+        </article>
+
+        <article class="card">
+            <div class="card-icon">↗</div>
+            <h2>Войти по коду</h2>
+            <p class="muted">Введи код приватной комнаты.</p>
             <form method="POST" action="{{ url_for('join_chat') }}">
-                <input type="text" name="code" placeholder="Код чата" required>
-                <button type="submit" class="btn-primary">Присоединиться</button>
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <label class="sr-only" for="code">Код чата</label>
+                <input type="text" id="code" name="code" placeholder="Например, A7K2Q9XZ" maxlength="10" autocomplete="off" required>
+                <button type="submit" class="btn-secondary">Присоединиться</button>
             </form>
+        </article>
+    </section>
+
+    <section class="card chat-list">
+        <div class="section-heading">
+            <div>
+                <h2>Ваши чаты</h2>
+                <p class="muted">{{ chat_rooms|length }} комнат</p>
+            </div>
         </div>
-        
-        <div class="chat-list">
-            <h2>Ваши чаты</h2>
-            {% if chat_rooms %}
-                <ul>
-                    {% for room in chat_rooms %}
-                        <li>
-                            <img src="{{ url_for('static', filename='avatars/' + room.created_by_user.avatar) }}" 
-                                 alt="Аватар" class="avatar-small">
-                            <a href="{{ url_for('chat', chat_id=room.id) }}">{{ room.name }}</a>
-                            {% if room.is_private %}
-                                <span class="chat-code">Код: {{ room.code }}</span>
-                            {% endif %}
-                        </li>
-                    {% endfor %}
-                </ul>
-            {% else %}
-                <p>У вас пока нет чатов. Создайте новый или присоединитесь к существующему.</p>
-            {% endif %}
-        </div>
-    </div>
-</div>
+        {% if chat_rooms %}
+            <div class="rooms">
+                {% for room in chat_rooms %}
+                    <a class="room" href="{{ url_for('chat', chat_id=room.id) }}">
+                        <div class="room-avatar">{{ room.name[:1]|upper }}</div>
+                        <div class="room-info">
+                            <strong>{{ room.name }}</strong>
+                            <span>{% if room.is_private %}Приватная комната{% else %}Открытая комната{% endif %}</span>
+                        </div>
+                        {% if room.is_private %}<code>{{ room.code }}</code>{% endif %}
+                        <span class="room-arrow">›</span>
+                    </a>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="empty-state">
+                <div class="empty-icon">💬</div>
+                <h3>Пока нет чатов</h3>
+                <p class="muted">Создай первый чат или присоединись к нему по коду.</p>
+            </div>
+        {% endif %}
+    </section>
+</main>
 {% endblock %}
