@@ -6,6 +6,7 @@ import secrets
 import string
 import os
 import hmac
+from sqlalchemy import inspect
 
 app = Flask(__name__)
 app.config.update(
@@ -80,8 +81,25 @@ def add_security_headers(response):
     return response
 
 
-with app.app_context():
+def initialize_database():
+    """Create new tables and safely add small schema changes to old SQLite DBs."""
     db.create_all()
+
+    # db.create_all() does not alter existing tables. The previous Mirik
+    # database therefore needs this one-time migration for the new is_active
+    # column. Keep this migration SQLite-safe and idempotent.
+    if db.engine.url.get_backend_name() == "sqlite":
+        inspector = inspect(db.engine)
+        user_columns = {column["name"] for column in inspector.get_columns("user")}
+        if "is_active" not in user_columns:
+            with db.engine.begin() as connection:
+                connection.exec_driver_sql(
+                    "ALTER TABLE user ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1"
+                )
+
+
+with app.app_context():
+    initialize_database()
     os.makedirs(os.path.join(app.static_folder, "avatars"), exist_ok=True)
 
 
