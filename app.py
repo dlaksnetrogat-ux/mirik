@@ -6,10 +6,8 @@ import secrets
 import string
 import os
 import hmac
-import hashlib
-import time
-import urllib.parse
 from sqlalchemy import inspect
+from authlib.integrations.flask_client import OAuth
 
 app = Flask(__name__)
 app.config.update(
@@ -32,8 +30,17 @@ login_manager.init_app(app)
 login_manager.login_view = "login"
 login_manager.login_message = "Сначала войдите в аккаунт."
 
-telegram_bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
-telegram_bot_username = os.environ.get("TELEGRAM_BOT_USERNAME", "").lstrip("@").strip()
+oauth = OAuth(app)
+telegram_client_id = os.environ.get("TELEGRAM_CLIENT_ID", "").strip()
+telegram_client_secret = os.environ.get("TELEGRAM_CLIENT_SECRET", "").strip()
+if telegram_client_id and telegram_client_secret:
+    oauth.register(
+        name="telegram",
+        server_metadata_url="https://oauth.telegram.org/.well-known/openid-configuration",
+        client_id=telegram_client_id,
+        client_secret=telegram_client_secret,
+        client_kwargs={"scope": "openid profile"},
+    )
 
 
 @login_manager.user_loader
@@ -79,33 +86,7 @@ def generate_code(length=8):
 
 
 def telegram_enabled():
-    return bool(telegram_bot_token and telegram_bot_username)
-
-
-def verify_telegram_auth(data):
-    """Verify Telegram Login Widget data using the bot token."""
-    if not telegram_bot_token:
-        return False
-
-    received_hash = data.get("hash", "")
-    auth_date = data.get("auth_date", "")
-    if not received_hash or not auth_date:
-        return False
-
-    try:
-        if abs(int(time.time()) - int(auth_date)) > 86400:
-            return False
-    except (TypeError, ValueError):
-        return False
-
-    check_values = []
-    for key in sorted(data.keys()):
-        if key != "hash":
-            check_values.append(f"{key}={data[key]}")
-    data_check_string = "\n".join(check_values)
-    secret_key = hashlib.sha256(telegram_bot_token.encode("utf-8")).digest()
-    expected_hash = hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
-    return hmac.compare_digest(expected_hash, received_hash)
+    return bool(telegram_client_id and telegram_client_secret)
 
 
 @app.after_request
@@ -118,7 +99,7 @@ def add_security_headers(response):
         "default-src 'self'; "
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com; "
-        "script-src 'self' https://telegram.org; "
+        "script-src 'self'; "
         "img-src 'self' data: https://*.telegram.org https://cdn4.telesco.pe https://cdn5.telesco.pe; "
         "form-action 'self'; frame-ancestors 'self'"
     )
@@ -179,31 +160,51 @@ def login():
 
         flash("Неверный email или пароль", "error")
 
-    return render_template("login.html", telegram_enabled=telegram_enabled(), telegram_bot_username=telegram_bot_username)
+    return render_template("login.html", telegram_enabled=telegram_enabled())
+
+
+@app.route("/login/telegram")
+def telegram_login():
+    if current_user.is_authenticated:
+        return redirect(url_for("dashboard"))
+    if not telegram_enabled():
+        flash("Telegram Login ещё не настроен на сервере.", "error")
+        return redirect(url_for("login"))
+
+    redirect_uri = url_for("telegram_callback", _external=True)
+    nonce = secrets.token_urlsafe(24)
+    state = secrets.token_urlsafe(24)
+    session["telegram_nonce"] = nonce
+    session["telegram_state"] = state
+    return oauth.telegram.authorize_redirect(redirect_uri, nonce=nonce, state=state)
 
 
 @app.route("/auth/telegram/callback")
 def telegram_callback():
     if not telegram_enabled():
-        flash("Telegram Login пока не настроен на сервере.", "error")
+        flash("Telegram Login ещё не настроен на сервере.", "error")
         return redirect(url_for("login"))
 
-    data = request.args.to_dict(flat=True)
-    if not verify_telegram_auth(data):
-        flash("Не удалось подтвердить вход через Telegram. Попробуйте ещё раз.", "error")
+    try:
+        token = oauth.telegram.authorize_access_token()
+        nonce = session.pop("telegram_nonce", None)
+        session.pop("telegram_state", None)
+        claims = oauth.telegram.parse_id_token(token, nonce=nonce)
+    except Exception:
+        flash("Не удалось подтвердить вход через Telegram. Проверьте Allowed URLs в BotFather.", "error")
         return redirect(url_for("login"))
 
-    telegram_id = str(data.get("id", ""))
+    telegram_id = str(claims.get("sub") or claims.get("id") or "")
     if not telegram_id:
         flash("Telegram не вернул идентификатор пользователя.", "error")
         return redirect(url_for("login"))
 
-    username = (data.get("username") or "").strip()[:64] or None
-    first_name = (data.get("first_name") or "").strip()
-    last_name = (data.get("last_name") or "").strip()
-    display_name = " ".join(part for part in (first_name, last_name) if part).strip() or (f"@{username}" if username else "Telegram user")
-    display_name = display_name[:160]
-    photo_url = (data.get("photo_url") or "").strip()[:1000] or None
+    username = (claims.get("preferred_username") or "").strip()[:64] or None
+    display_name = (claims.get("name") or "").strip()
+    if not display_name and username:
+        display_name = f"@{username}"
+    display_name = (display_name or "Telegram user")[:160]
+    photo_url = (claims.get("picture") or "").strip()[:1000] or None
 
     user = User.query.filter_by(telegram_id=telegram_id).first()
     if user is None:
@@ -380,4 +381,4 @@ def logout():
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=int(os.environ.get("PORT", 5000)), debug=os.environ.get("FLASK_DEBUG") == "1")
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=os.environ.get("FLASK_DEBUG") == "1")
