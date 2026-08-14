@@ -7,6 +7,14 @@
     <h1>С возвращением 👋</h1>
     <p class="muted">Войдите, чтобы продолжить общение.</p>
 
+    {% if telegram_enabled %}
+        <a href="{{ url_for('telegram_login') }}" class="telegram-login-btn">
+            <span class="telegram-icon">✈</span>
+            <span>Войти через Telegram</span>
+        </a>
+        <div class="auth-divider"><span>или</span></div>
+    {% endif %}
+
     <form method="POST" class="auth-form" autocomplete="on">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="form-group">
