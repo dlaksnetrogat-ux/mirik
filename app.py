@@ -6,9 +6,10 @@ import secrets
 import string
 import os
 import hmac
+import hashlib
+import time
+import urllib.parse
 from sqlalchemy import inspect
-from authlib.integrations.flask_client import OAuth
-from werkzeug.security import generate_password_hash
 
 app = Flask(__name__)
 app.config.update(
@@ -31,17 +32,8 @@ login_manager.init_app(app)
 login_manager.login_view = "login"
 login_manager.login_message = "Сначала войдите в аккаунт."
 
-oauth = OAuth(app)
-telegram_client_id = os.environ.get("TELEGRAM_CLIENT_ID")
-telegram_client_secret = os.environ.get("TELEGRAM_CLIENT_SECRET")
-if telegram_client_id and telegram_client_secret:
-    oauth.register(
-        name="telegram",
-        server_metadata_url="https://oauth.telegram.org/.well-known/openid-configuration",
-        client_id=telegram_client_id,
-        client_secret=telegram_client_secret,
-        client_kwargs={"scope": "openid profile"},
-    )
+telegram_bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
+telegram_bot_username = os.environ.get("TELEGRAM_BOT_USERNAME", "").lstrip("@").strip()
 
 
 @login_manager.user_loader
@@ -87,17 +79,33 @@ def generate_code(length=8):
 
 
 def telegram_enabled():
-    return bool(telegram_client_id and telegram_client_secret)
+    return bool(telegram_bot_token and telegram_bot_username)
 
 
-def build_telegram_display_name(claims):
-    name = (claims.get("name") or "").strip()
-    username = (claims.get("preferred_username") or "").strip()
-    if name:
-        return name[:160]
-    if username:
-        return f"@{username}"[:160]
-    return "Telegram user"
+def verify_telegram_auth(data):
+    """Verify Telegram Login Widget data using the bot token."""
+    if not telegram_bot_token:
+        return False
+
+    received_hash = data.get("hash", "")
+    auth_date = data.get("auth_date", "")
+    if not received_hash or not auth_date:
+        return False
+
+    try:
+        if abs(int(time.time()) - int(auth_date)) > 86400:
+            return False
+    except (TypeError, ValueError):
+        return False
+
+    check_values = []
+    for key in sorted(data.keys()):
+        if key != "hash":
+            check_values.append(f"{key}={data[key]}")
+    data_check_string = "\n".join(check_values)
+    secret_key = hashlib.sha256(telegram_bot_token.encode("utf-8")).digest()
+    expected_hash = hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected_hash, received_hash)
 
 
 @app.after_request
@@ -110,8 +118,8 @@ def add_security_headers(response):
         "default-src 'self'; "
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com; "
-        "script-src 'self'; "
-        "img-src 'self' data: https://cdn4.telesco.pe https://cdn5.telesco.pe; "
+        "script-src 'self' https://telegram.org; "
+        "img-src 'self' data: https://*.telegram.org https://cdn4.telesco.pe https://cdn5.telesco.pe; "
         "form-action 'self'; frame-ancestors 'self'"
     )
     return response
@@ -126,9 +134,7 @@ def initialize_database():
         user_columns = {column["name"] for column in inspector.get_columns("user")}
         migrations = []
         if "is_active" not in user_columns:
-            migrations.append(
-                "ALTER TABLE user ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1"
-            )
+            migrations.append("ALTER TABLE user ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1")
         if "telegram_id" not in user_columns:
             migrations.append("ALTER TABLE user ADD COLUMN telegram_id VARCHAR(64)")
         if "telegram_username" not in user_columns:
@@ -137,7 +143,6 @@ def initialize_database():
             migrations.append("ALTER TABLE user ADD COLUMN display_name VARCHAR(160)")
         if "telegram_photo_url" not in user_columns:
             migrations.append("ALTER TABLE user ADD COLUMN telegram_photo_url VARCHAR(1000)")
-
         if migrations:
             with db.engine.begin() as connection:
                 for statement in migrations:
@@ -174,21 +179,7 @@ def login():
 
         flash("Неверный email или пароль", "error")
 
-    return render_template("login.html", telegram_enabled=telegram_enabled())
-
-
-@app.route("/login/telegram")
-def telegram_login():
-    if current_user.is_authenticated:
-        return redirect(url_for("dashboard"))
-    if not telegram_enabled():
-        flash("Telegram Login пока не настроен на сервере.", "error")
-        return redirect(url_for("login"))
-
-    redirect_uri = url_for("telegram_callback", _external=True)
-    nonce = secrets.token_urlsafe(24)
-    session["telegram_nonce"] = nonce
-    return oauth.telegram.authorize_redirect(redirect_uri, nonce=nonce)
+    return render_template("login.html", telegram_enabled=telegram_enabled(), telegram_bot_username=telegram_bot_username)
 
 
 @app.route("/auth/telegram/callback")
@@ -197,29 +188,28 @@ def telegram_callback():
         flash("Telegram Login пока не настроен на сервере.", "error")
         return redirect(url_for("login"))
 
-    try:
-        token = oauth.telegram.authorize_access_token()
-        nonce = session.pop("telegram_nonce", None)
-        claims = oauth.telegram.parse_id_token(token, nonce=nonce)
-    except Exception:
+    data = request.args.to_dict(flat=True)
+    if not verify_telegram_auth(data):
         flash("Не удалось подтвердить вход через Telegram. Попробуйте ещё раз.", "error")
         return redirect(url_for("login"))
 
-    telegram_id = str(claims.get("sub") or claims.get("id") or "")
+    telegram_id = str(data.get("id", ""))
     if not telegram_id:
         flash("Telegram не вернул идентификатор пользователя.", "error")
         return redirect(url_for("login"))
 
-    username = (claims.get("preferred_username") or "").strip()[:64] or None
-    display_name = build_telegram_display_name(claims)
-    photo_url = (claims.get("picture") or "").strip()[:1000] or None
+    username = (data.get("username") or "").strip()[:64] or None
+    first_name = (data.get("first_name") or "").strip()
+    last_name = (data.get("last_name") or "").strip()
+    display_name = " ".join(part for part in (first_name, last_name) if part).strip() or (f"@{username}" if username else "Telegram user")
+    display_name = display_name[:160]
+    photo_url = (data.get("photo_url") or "").strip()[:1000] or None
 
     user = User.query.filter_by(telegram_id=telegram_id).first()
     if user is None:
         generated_email = f"tg_{telegram_id}@telegram.mirik.local"
         user = User(
             email=generated_email[:120],
-            password_hash=generate_password_hash(secrets.token_urlsafe(32)),
             telegram_id=telegram_id,
             telegram_username=username,
             display_name=display_name,
@@ -227,6 +217,7 @@ def telegram_callback():
             avatar="default.png",
             online=True,
         )
+        user.set_password(secrets.token_urlsafe(32))
         db.session.add(user)
     else:
         user.telegram_username = username
