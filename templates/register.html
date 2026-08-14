@@ -3,7 +3,7 @@
 
 {% block content %}
 <style>
-.telegram-login-btn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:11px 14px;border-radius:10px;background:#2AABEE;color:#fff;font-weight:600;text-decoration:none;transition:.15s ease}.telegram-login-btn:hover{background:#229ed9}.telegram-icon{font-size:17px}.auth-divider{display:flex;align-items:center;gap:10px;margin:16px 0;color:var(--muted);font-size:12px}.auth-divider:before,.auth-divider:after{content:"";height:1px;flex:1;background:var(--border)}
+.telegram-login-btn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:11px 14px;border:0;border-radius:10px;background:#2AABEE;color:#fff;font-weight:600;cursor:pointer;transition:.15s ease}.telegram-login-btn:hover{background:#229ed9}.telegram-icon{font-size:17px}.auth-divider{display:flex;align-items:center;gap:10px;margin:16px 0;color:var(--muted);font-size:12px}.auth-divider:before,.auth-divider:after{content:"";height:1px;flex:1;background:var(--border)}.telegram-error{margin-top:8px;color:var(--danger);font-size:12px;text-align:center;min-height:18px}
 </style>
 <main class="auth-container">
     <div class="brand">MIRIK</div>
@@ -11,11 +11,33 @@
     <p class="muted">Выберите удобный способ регистрации.</p>
 
     {% if telegram_enabled %}
-        <a href="{{ url_for('telegram_login') }}" class="telegram-login-btn">
+        <button type="button" id="telegram-register-button" class="telegram-login-btn">
             <span class="telegram-icon">✈</span>
             <span>Создать аккаунт через Telegram</span>
-        </a>
+        </button>
+        <div id="telegram-error" class="telegram-error"></div>
         <div class="auth-divider"><span>или по email</span></div>
+        <script src="https://telegram.org/js/telegram-login.js?3"></script>
+        <script>
+        (() => {
+            const button = document.getElementById('telegram-register-button');
+            const errorBox = document.getElementById('telegram-error');
+            const clientId = Number({{ telegram_client_id|tojson }});
+            const nonce = {{ telegram_nonce|tojson }};
+            const callbackUrl = {{ url_for('telegram_callback', _external=True)|tojson }};
+            const showError = (message) => { errorBox.textContent = message || 'Не удалось зарегистрироваться через Telegram.'; };
+
+            Telegram.Login.init({client_id: clientId, scope: ['profile'], nonce: nonce}, async (data) => {
+                if (data && data.error) { showError(data.error); return; }
+                if (!data || !data.id_token) { showError('Telegram не вернул токен входа.'); return; }
+                try {
+                    const response = await fetch(callbackUrl, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id_token:data.id_token})});
+                    window.location.href = response.url;
+                } catch (_) { showError('Не удалось связаться с сервером Mirik.'); }
+            });
+            button.addEventListener('click', () => Telegram.Login.open());
+        })();
+        </script>
     {% endif %}
 
     <form method="POST" class="auth-form" autocomplete="on">
