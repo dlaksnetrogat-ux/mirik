@@ -24,6 +24,11 @@ class User(db.Model, UserMixin):
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
 
+    telegram_id = db.Column(db.String(64), unique=True, nullable=True, index=True)
+    telegram_username = db.Column(db.String(64), nullable=True, index=True)
+    display_name = db.Column(db.String(160), nullable=True)
+    telegram_photo_url = db.Column(db.String(1000), nullable=True)
+
     messages = db.relationship(
         "Message",
         backref="author",
