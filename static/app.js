@@ -1,9 +1,17 @@
 (() => {
     const root = document.documentElement;
 
+    let savedTheme = 'light';
+    try {
+        savedTheme = localStorage.getItem('mirik-theme') === 'dark' ? 'dark' : 'light';
+    } catch (_) {}
+    root.dataset.theme = savedTheme;
+
     function setTheme(theme) {
         const next = theme === 'dark' ? 'dark' : 'light';
         root.dataset.theme = next;
+        const themeMeta = document.querySelector('meta[name="theme-color"]');
+        if (themeMeta) themeMeta.setAttribute('content', next === 'dark' ? '#17212b' : '#ffffff');
         try { localStorage.setItem('mirik-theme', next); } catch (_) {}
     }
 
