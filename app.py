@@ -77,17 +77,22 @@ def add_security_headers(response):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
-    response.headers.setdefault("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; form-action 'self'; frame-ancestors 'self'")
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "script-src 'self'; "
+        "img-src 'self' data:; "
+        "form-action 'self'; frame-ancestors 'self'"
+    )
     return response
 
 
 def initialize_database():
-    """Create new tables and safely add small schema changes to old SQLite DBs."""
+    """Create tables and migrate the small schema changes used by Mirik."""
     db.create_all()
 
-    # db.create_all() does not alter existing tables. The previous Mirik
-    # database therefore needs this one-time migration for the new is_active
-    # column. Keep this migration SQLite-safe and idempotent.
     if db.engine.url.get_backend_name() == "sqlite":
         inspector = inspect(db.engine)
         user_columns = {column["name"] for column in inspector.get_columns("user")}
