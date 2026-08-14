@@ -6,15 +6,6 @@
     <meta name="theme-color" content="#ffffff">
     <meta name="description" content="Mirik — современный приватный мессенджер">
     <title>{% block title %}Mirik{% endblock %}</title>
-    <script>
-        (() => {
-            try {
-                const saved = localStorage.getItem('mirik-theme');
-                const theme = saved === 'dark' ? 'dark' : 'light';
-                document.documentElement.dataset.theme = theme;
-            } catch (_) {}
-        })();
-    </script>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&display=swap">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
