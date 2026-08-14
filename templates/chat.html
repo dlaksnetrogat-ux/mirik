@@ -2,49 +2,92 @@
 {% block title %}{{ chat_room.name }} — Mirik{% endblock %}
 
 {% block content %}
-<main class="chat-container">
-    <header class="chat-header">
-        <div>
-            <a href="{{ url_for('dashboard') }}" class="btn-back">← Назад</a>
-            <h1>{{ chat_room.name }}</h1>
-            <span class="chat-status">{% if chat_room.is_private %}🔒 Приватный чат{% else %}🌐 Открытый чат{% endif %}</span>
-        </div>
-        {% if chat_room.is_private %}<code class="header-code">{{ chat_room.code }}</code>{% endif %}
-    </header>
-
-    <section class="chat-messages" id="messages" aria-live="polite">
-        {% if messages %}
-            {% for message in messages %}
-                <article class="message {% if message.user_id == current_user.id %}message-own{% endif %}">
-                    <div class="message-avatar">{{ message.author.email[:1]|upper }}</div>
-                    <div class="message-content">
-                        <div class="message-meta">
-                            <strong>{{ message.author.email }}</strong>
-                            <time datetime="{{ message.timestamp.isoformat() }}">{{ message.timestamp.strftime('%H:%M') }}</time>
-                        </div>
-                        <p class="message-text">{{ message.content }}</p>
-                    </div>
-                </article>
-            {% endfor %}
-        {% else %}
-            <div class="empty-state">
-                <div class="empty-icon">💬</div>
-                <h3>Здесь пока тихо</h3>
-                <p class="muted">Напиши первое сообщение.</p>
+<div class="messenger-shell chat-screen">
+    <aside class="sidebar" aria-label="Список чатов">
+        <div class="sidebar-top">
+            <a class="icon-button back-sidebar" href="{{ url_for('dashboard') }}" aria-label="Вернуться к чатам">‹</a>
+            <div class="search-box">
+                <span>⌕</span>
+                <input id="chat-search" type="search" placeholder="Поиск" autocomplete="off" aria-label="Поиск чатов">
             </div>
-        {% endif %}
-    </section>
+        </div>
 
-    <form method="POST" action="{{ url_for('send_message') }}" class="chat-input">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input type="hidden" name="chat_id" value="{{ chat_room.id }}">
-        <label class="sr-only" for="content">Сообщение</label>
-        <input id="content" type="text" name="content" placeholder="Напишите сообщение..." maxlength="2000" autocomplete="off" required autofocus>
-        <button type="submit" class="btn-send" aria-label="Отправить сообщение">➤</button>
-    </form>
-</main>
-<script>
-    const messages = document.getElementById('messages');
-    if (messages) messages.scrollTop = messages.scrollHeight;
-</script>
+        <div class="profile-strip">
+            <div class="avatar avatar-user">{{ current_user.email[:1]|upper }}</div>
+            <div class="profile-copy">
+                <strong>{{ current_user.email }}</strong>
+                <span>В сети</span>
+            </div>
+            <button class="icon-button" type="button" data-theme-toggle aria-label="Переключить тему">◐</button>
+        </div>
+
+        <div class="chat-list" id="chat-list">
+            {% for room in current_user.chat_rooms %}
+                <a class="chat-list-item {% if room.id == chat_room.id %}active{% endif %}" href="{{ url_for('chat', chat_id=room.id) }}" data-chat-name="{{ room.name|lower }}">
+                    <div class="avatar room-avatar">{{ room.name[:1]|upper }}</div>
+                    <div class="chat-list-copy">
+                        <div class="chat-list-row">
+                            <strong>{{ room.name }}</strong>
+                            <time>{% if room.is_private %}🔒{% else %}🌐{% endif %}</time>
+                        </div>
+                        <span>{% if room.is_private %}Приватный чат{% else %}Открытый чат{% endif %}</span>
+                    </div>
+                </a>
+            {% endfor %}
+        </div>
+
+        <div class="sidebar-footer">
+            <form method="POST" action="{{ url_for('logout') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="footer-button" type="submit">↪ Выйти</button>
+            </form>
+        </div>
+    </aside>
+
+    <main class="chat-main">
+        <header class="conversation-header">
+            <div class="avatar room-avatar conversation-avatar">{{ chat_room.name[:1]|upper }}</div>
+            <div class="conversation-copy">
+                <h1>{{ chat_room.name }}</h1>
+                <span>{% if chat_room.is_private %}Приватный чат{% else %}Открытый чат{% endif %}</span>
+            </div>
+            {% if chat_room.is_private %}
+                <button class="code-chip" type="button" data-copy-code="{{ chat_room.code }}" title="Скопировать код">🔒 {{ chat_room.code }}</button>
+            {% endif %}
+            <button class="icon-button" type="button" aria-label="Дополнительные действия">⋮</button>
+        </header>
+
+        <section class="chat-messages" id="messages" aria-live="polite">
+            {% if messages %}
+                {% for message in messages %}
+                    <article class="message {% if message.user_id == current_user.id %}message-own{% endif %}">
+                        <div class="message-bubble">
+                            {% if message.user_id != current_user.id %}
+                                <strong class="message-author">{{ message.author.email }}</strong>
+                            {% endif %}
+                            <p class="message-text">{{ message.content }}</p>
+                            <time class="message-time" datetime="{{ message.timestamp.isoformat() }}">{{ message.timestamp.strftime('%H:%M') }}{% if message.user_id == current_user.id %} ✓✓{% endif %}</time>
+                        </div>
+                    </article>
+                {% endfor %}
+            {% else %}
+                <div class="conversation-empty">
+                    <div class="conversation-empty-icon">✈</div>
+                    <h2>Начните общение</h2>
+                    <p>Напишите первое сообщение в этом чате.</p>
+                </div>
+            {% endif %}
+        </section>
+
+        <form method="POST" action="{{ url_for('send_message') }}" class="message-composer">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="chat_id" value="{{ chat_room.id }}">
+            <button class="composer-icon" type="button" aria-label="Эмодзи">☺</button>
+            <label class="sr-only" for="content">Сообщение</label>
+            <input id="content" type="text" name="content" placeholder="Написать сообщение..." maxlength="2000" autocomplete="off" required autofocus>
+            <button class="composer-icon" type="button" aria-label="Прикрепить файл">⌕</button>
+            <button class="send-button" type="submit" aria-label="Отправить">➤</button>
+        </form>
+    </main>
+</div>
 {% endblock %}
