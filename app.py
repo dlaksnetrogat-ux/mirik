@@ -7,6 +7,8 @@ import string
 import os
 import hmac
 from sqlalchemy import inspect
+from authlib.integrations.flask_client import OAuth
+from werkzeug.security import generate_password_hash
 
 app = Flask(__name__)
 app.config.update(
@@ -28,6 +30,18 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = "login"
 login_manager.login_message = "Сначала войдите в аккаунт."
+
+oauth = OAuth(app)
+telegram_client_id = os.environ.get("TELEGRAM_CLIENT_ID")
+telegram_client_secret = os.environ.get("TELEGRAM_CLIENT_SECRET")
+if telegram_client_id and telegram_client_secret:
+    oauth.register(
+        name="telegram",
+        server_metadata_url="https://oauth.telegram.org/.well-known/openid-configuration",
+        client_id=telegram_client_id,
+        client_secret=telegram_client_secret,
+        client_kwargs={"scope": "openid profile"},
+    )
 
 
 @login_manager.user_loader
@@ -72,6 +86,20 @@ def generate_code(length=8):
     return "".join(secrets.choice(alphabet) for _ in range(length))
 
 
+def telegram_enabled():
+    return bool(telegram_client_id and telegram_client_secret)
+
+
+def build_telegram_display_name(claims):
+    name = (claims.get("name") or "").strip()
+    username = (claims.get("preferred_username") or "").strip()
+    if name:
+        return name[:160]
+    if username:
+        return f"@{username}"[:160]
+    return "Telegram user"
+
+
 @app.after_request
 def add_security_headers(response):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
@@ -83,24 +111,37 @@ def add_security_headers(response):
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com; "
         "script-src 'self'; "
-        "img-src 'self' data:; "
+        "img-src 'self' data: https://cdn4.telesco.pe https://cdn5.telesco.pe; "
         "form-action 'self'; frame-ancestors 'self'"
     )
     return response
 
 
 def initialize_database():
-    """Create tables and migrate the small schema changes used by Mirik."""
+    """Create tables and migrate small schema changes used by Mirik."""
     db.create_all()
 
     if db.engine.url.get_backend_name() == "sqlite":
         inspector = inspect(db.engine)
         user_columns = {column["name"] for column in inspector.get_columns("user")}
+        migrations = []
         if "is_active" not in user_columns:
+            migrations.append(
+                "ALTER TABLE user ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1"
+            )
+        if "telegram_id" not in user_columns:
+            migrations.append("ALTER TABLE user ADD COLUMN telegram_id VARCHAR(64)")
+        if "telegram_username" not in user_columns:
+            migrations.append("ALTER TABLE user ADD COLUMN telegram_username VARCHAR(64)")
+        if "display_name" not in user_columns:
+            migrations.append("ALTER TABLE user ADD COLUMN display_name VARCHAR(160)")
+        if "telegram_photo_url" not in user_columns:
+            migrations.append("ALTER TABLE user ADD COLUMN telegram_photo_url VARCHAR(1000)")
+
+        if migrations:
             with db.engine.begin() as connection:
-                connection.exec_driver_sql(
-                    "ALTER TABLE user ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1"
-                )
+                for statement in migrations:
+                    connection.exec_driver_sql(statement)
 
 
 with app.app_context():
@@ -133,7 +174,71 @@ def login():
 
         flash("Неверный email или пароль", "error")
 
-    return render_template("login.html")
+    return render_template("login.html", telegram_enabled=telegram_enabled())
+
+
+@app.route("/login/telegram")
+def telegram_login():
+    if current_user.is_authenticated:
+        return redirect(url_for("dashboard"))
+    if not telegram_enabled():
+        flash("Telegram Login пока не настроен на сервере.", "error")
+        return redirect(url_for("login"))
+
+    redirect_uri = url_for("telegram_callback", _external=True)
+    nonce = secrets.token_urlsafe(24)
+    session["telegram_nonce"] = nonce
+    return oauth.telegram.authorize_redirect(redirect_uri, nonce=nonce)
+
+
+@app.route("/auth/telegram/callback")
+def telegram_callback():
+    if not telegram_enabled():
+        flash("Telegram Login пока не настроен на сервере.", "error")
+        return redirect(url_for("login"))
+
+    try:
+        token = oauth.telegram.authorize_access_token()
+        nonce = session.pop("telegram_nonce", None)
+        claims = oauth.telegram.parse_id_token(token, nonce=nonce)
+    except Exception:
+        flash("Не удалось подтвердить вход через Telegram. Попробуйте ещё раз.", "error")
+        return redirect(url_for("login"))
+
+    telegram_id = str(claims.get("sub") or claims.get("id") or "")
+    if not telegram_id:
+        flash("Telegram не вернул идентификатор пользователя.", "error")
+        return redirect(url_for("login"))
+
+    username = (claims.get("preferred_username") or "").strip()[:64] or None
+    display_name = build_telegram_display_name(claims)
+    photo_url = (claims.get("picture") or "").strip()[:1000] or None
+
+    user = User.query.filter_by(telegram_id=telegram_id).first()
+    if user is None:
+        generated_email = f"tg_{telegram_id}@telegram.mirik.local"
+        user = User(
+            email=generated_email[:120],
+            password_hash=generate_password_hash(secrets.token_urlsafe(32)),
+            telegram_id=telegram_id,
+            telegram_username=username,
+            display_name=display_name,
+            telegram_photo_url=photo_url,
+            avatar="default.png",
+            online=True,
+        )
+        db.session.add(user)
+    else:
+        user.telegram_username = username
+        user.display_name = display_name
+        user.telegram_photo_url = photo_url
+        user.online = True
+
+    db.session.commit()
+    login_user(user, remember=True)
+    session.permanent = True
+    flash("Вы вошли через Telegram.", "success")
+    return redirect(url_for("dashboard"))
 
 
 @app.route("/register", methods=["GET", "POST"])
@@ -167,7 +272,7 @@ def register():
         flash("Регистрация прошла успешно. Теперь войдите в аккаунт.", "success")
         return redirect(url_for("login"))
 
-    return render_template("register.html")
+    return render_template("register.html", telegram_enabled=telegram_enabled())
 
 
 @app.route("/dashboard")
