@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="chat-container">
+    <header class="chat-header">
+        <h1>{{ chat_room.name }}</h1>
+        <a href="{{ url_for('dashboard') }}" class="btn-back">Назад</a>
+    </header>
+    
+    <div class="chat-messages">
+        {% for message in messages %}
+            <div class="message">
+                <img src="{{ url_for('static', filename='avatars/' + message.author.avatar) }}" 
+                     alt="Аватар" class="avatar-small">
+                <div class="message-content">
+                    <span class="message-author">{{ message.author.email }}</span>
+                    <span class="message-text">{{ message.content }}</span>
+                    <span class="message-time">{{ message.timestamp.strftime('%H:%M') }}</span>
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+    
+    <div class="chat-input">
+        <form method="POST" action="{{ url_for('send_message') }}">
+            <input type="hidden" name="chat_id" value="{{ chat_room.id }}">
+            <input type="text" name="content" placeholder="Введите сообщение..." required>
+            <button type="submit" class="btn-send">Отправить</button>
+        </form>
+    </div>
+</div>
+{% endblock %}
