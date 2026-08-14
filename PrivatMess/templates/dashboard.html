@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="dashboard-container">
+    <header class="dashboard-header">
+        <h1>Добро пожаловать в Chat, {{ current_user.email }}!</h1>
+        <a href="{{ url_for('logout') }}" class="btn-logout">Выйти</a>
+    </header>
+    
+    <div class="dashboard-content">
+        <div class="chat-creation">
+            <h2>Создать новый чат</h2>
+            <form method="POST" action="{{ url_for('create_chat') }}">
+                <input type="text" name="chat_name" placeholder="Название чата" required>
+                <label>
+                    <input type="checkbox" name="is_private"> Приватный чат (только по коду)
+                </label>
+                <button type="submit" class="btn-primary">Создать</button>
+            </form>
+        </div>
+        
+        <div class="chat-join">
+            <h2>Присоединиться к чату по коду</h2>
+            <form method="POST" action="{{ url_for('join_chat') }}">
+                <input type="text" name="code" placeholder="Код чата" required>
+                <button type="submit" class="btn-primary">Присоединиться</button>
+            </form>
+        </div>
+        
+        <div class="chat-list">
+            <h2>Ваши чаты</h2>
+            {% if chat_rooms %}
+                <ul>
+                    {% for room in chat_rooms %}
+                        <li>
+                            <img src="{{ url_for('static', filename='avatars/' + room.created_by_user.avatar) }}" 
+                                 alt="Аватар" class="avatar-small">
+                            <a href="{{ url_for('chat', chat_id=room.id) }}">{{ room.name }}</a>
+                            {% if room.is_private %}
+                                <span class="chat-code">Код: {{ room.code }}</span>
+                            {% endif %}
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p>У вас пока нет чатов. Создайте новый или присоединитесь к существующему.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
