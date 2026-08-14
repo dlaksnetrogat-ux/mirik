@@ -1,11 +1,12 @@
 <!doctype html>
-<html lang="ru">
+<html lang="ru" data-theme="light">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#111827">
-    <meta name="description" content="Mirik — простой приватный чат">
+    <meta name="theme-color" content="#ffffff">
+    <meta name="description" content="Mirik — современный приватный мессенджер">
     <title>{% block title %}Mirik{% endblock %}</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&display=swap">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
@@ -19,8 +20,8 @@
                 </div>
             {% endif %}
         {% endwith %}
-
         {% block content %}{% endblock %}
     </div>
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>

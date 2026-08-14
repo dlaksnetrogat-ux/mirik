@@ -1,78 +1,100 @@
 {% extends "base.html" %}
-{% block title %}Чаты — Mirik{% endblock %}
+{% block title %}Mirik — Чаты{% endblock %}
 
 {% block content %}
-<main class="dashboard-container">
-    <header class="dashboard-header">
-        <div>
-            <div class="brand brand-left">MIRIK</div>
-            <h1>Привет, {{ current_user.email }} 👋</h1>
-            <p class="muted">Создавай комнаты и общайся с друзьями.</p>
-        </div>
-        <form method="POST" action="{{ url_for('logout') }}">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <button type="submit" class="btn-danger">Выйти</button>
-        </form>
-    </header>
-
-    <section class="dashboard-grid">
-        <article class="card">
-            <div class="card-icon">＋</div>
-            <h2>Новый чат</h2>
-            <p class="muted">Создай комнату для своей компании.</p>
-            <form method="POST" action="{{ url_for('create_chat') }}">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <label class="sr-only" for="chat_name">Название чата</label>
-                <input type="text" id="chat_name" name="chat_name" placeholder="Название чата" maxlength="100" required>
-                <label class="check-row">
-                    <input type="checkbox" name="is_private">
-                    <span>Приватный чат по коду</span>
-                </label>
-                <button type="submit" class="btn-primary">Создать чат</button>
-            </form>
-        </article>
-
-        <article class="card">
-            <div class="card-icon">↗</div>
-            <h2>Войти по коду</h2>
-            <p class="muted">Введи код приватной комнаты.</p>
-            <form method="POST" action="{{ url_for('join_chat') }}">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <label class="sr-only" for="code">Код чата</label>
-                <input type="text" id="code" name="code" placeholder="Например, A7K2Q9XZ" maxlength="10" autocomplete="off" required>
-                <button type="submit" class="btn-secondary">Присоединиться</button>
-            </form>
-        </article>
-    </section>
-
-    <section class="card chat-list">
-        <div class="section-heading">
-            <div>
-                <h2>Ваши чаты</h2>
-                <p class="muted">{{ chat_rooms|length }} комнат</p>
+<div class="messenger-shell">
+    <aside class="sidebar" aria-label="Список чатов">
+        <div class="sidebar-top">
+            <button class="icon-button" type="button" data-menu-toggle aria-label="Открыть меню">☰</button>
+            <div class="search-box">
+                <span>⌕</span>
+                <input id="chat-search" type="search" placeholder="Поиск" autocomplete="off" aria-label="Поиск чатов">
             </div>
         </div>
-        {% if chat_rooms %}
-            <div class="rooms">
+
+        <div class="profile-strip">
+            <div class="avatar avatar-user">{{ current_user.email[:1]|upper }}</div>
+            <div class="profile-copy">
+                <strong>{{ current_user.email }}</strong>
+                <span>В сети</span>
+            </div>
+            <button class="icon-button" type="button" data-theme-toggle aria-label="Переключить тему">◐</button>
+        </div>
+
+        <div class="sidebar-actions">
+            <button class="new-chat-button" type="button" data-new-chat>＋ Новый чат</button>
+        </div>
+
+        <div class="chat-list" id="chat-list">
+            {% if chat_rooms %}
                 {% for room in chat_rooms %}
-                    <a class="room" href="{{ url_for('chat', chat_id=room.id) }}">
-                        <div class="room-avatar">{{ room.name[:1]|upper }}</div>
-                        <div class="room-info">
-                            <strong>{{ room.name }}</strong>
-                            <span>{% if room.is_private %}Приватная комната{% else %}Открытая комната{% endif %}</span>
+                    <a class="chat-list-item" href="{{ url_for('chat', chat_id=room.id) }}" data-chat-name="{{ room.name|lower }}">
+                        <div class="avatar room-avatar">{{ room.name[:1]|upper }}</div>
+                        <div class="chat-list-copy">
+                            <div class="chat-list-row">
+                                <strong>{{ room.name }}</strong>
+                                <time>{% if room.is_private %}🔒{% else %}🌐{% endif %}</time>
+                            </div>
+                            <span>{% if room.is_private %}Приватный чат{% else %}Открытый чат{% endif %}</span>
                         </div>
-                        {% if room.is_private %}<code>{{ room.code }}</code>{% endif %}
-                        <span class="room-arrow">›</span>
                     </a>
                 {% endfor %}
+            {% else %}
+                <div class="sidebar-empty">
+                    <div class="sidebar-empty-icon">💬</div>
+                    <strong>Нет чатов</strong>
+                    <span>Создай свой первый чат</span>
+                </div>
+            {% endif %}
+        </div>
+
+        <div class="sidebar-footer">
+            <form method="POST" action="{{ url_for('logout') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="footer-button" type="submit">↪ Выйти</button>
+            </form>
+        </div>
+    </aside>
+
+    <main class="welcome-pane">
+        <div class="welcome-card">
+            <div class="welcome-logo">M</div>
+            <h1>Добро пожаловать в Mirik</h1>
+            <p>Выбери чат слева или создай новый, чтобы начать общение.</p>
+            <button class="primary-action" type="button" data-new-chat>Создать чат</button>
+        </div>
+    </main>
+</div>
+
+<div class="modal-backdrop" data-modal hidden>
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="new-chat-title">
+        <div class="modal-head">
+            <div>
+                <h2 id="new-chat-title">Новый чат</h2>
+                <p>Создай комнату или войди по коду.</p>
             </div>
-        {% else %}
-            <div class="empty-state">
-                <div class="empty-icon">💬</div>
-                <h3>Пока нет чатов</h3>
-                <p class="muted">Создай первый чат или присоединись к нему по коду.</p>
-            </div>
-        {% endif %}
+            <button class="icon-button" type="button" data-modal-close aria-label="Закрыть">×</button>
+        </div>
+
+        <form method="POST" action="{{ url_for('create_chat') }}" class="modal-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label for="chat_name">Название чата</label>
+            <input id="chat_name" name="chat_name" maxlength="100" placeholder="Например, Друзья" required autofocus>
+            <label class="switch-row">
+                <input type="checkbox" name="is_private">
+                <span>Приватный чат по коду</span>
+            </label>
+            <button class="primary-action" type="submit">Создать чат</button>
+        </form>
+
+        <div class="modal-divider"><span>или</span></div>
+
+        <form method="POST" action="{{ url_for('join_chat') }}" class="modal-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label for="code">Код приватного чата</label>
+            <input id="code" name="code" maxlength="10" placeholder="A7K2Q9XZ" autocomplete="off">
+            <button class="secondary-action" type="submit">Войти по коду</button>
+        </form>
     </section>
-</main>
+</div>
 {% endblock %}
