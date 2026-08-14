@@ -5,7 +5,15 @@
 <main class="auth-container">
     <div class="brand">MIRIK</div>
     <h1>Создать аккаунт</h1>
-    <p class="muted">Минимум 8 символов для пароля.</p>
+    <p class="muted">Выберите удобный способ входа.</p>
+
+    {% if telegram_enabled %}
+        <a href="{{ url_for('telegram_login') }}" class="telegram-login-btn">
+            <span class="telegram-icon">✈</span>
+            <span>Создать аккаунт через Telegram</span>
+        </a>
+        <div class="auth-divider"><span>или по email</span></div>
+    {% endif %}
 
     <form method="POST" class="auth-form" autocomplete="on">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
